@@ -1,0 +1,2390 @@
+{
+	"AWSTemplateFormatVersion" : "2010-09-09",
+	"Transform" : "AWS::Serverless-2016-10-31",
+	"Description" : "An auto-scaling ECS cluster using custom CloudWatch metrics and supports draining during scale-in.",
+
+	"Parameters" : {
+		"InstanceType" : {
+			"Description" : "The instance type to use for the cluster nodes.",
+			"Type" : "String",			
+			"AllowedValues" : [ 
+				"a1.medium",
+				"a1.large",
+				"a1.xlarge",
+				"a1.2xlarge",
+				"a1.4xlarge",
+				
+				"t3.nano",
+				"t3.micro",
+				"t3.small",
+				"t3.medium",
+				"t3.large",
+				"t3.xlarge",
+				"t3.2xlarge",
+
+				"t3a.nano",
+				"t3a.micro",
+				"t3a.small",
+				"t3a.medium",
+				"t3a.large",
+				"t3a.xlarge",
+				"t3a.2xlarge",
+
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "m4.10xlarge",
+                
+				"m5.large",
+				"m5.xlarge",
+				"m5.2xlarge",
+				"m5.4xlarge",
+				"m5.12xlarge",
+				"m5.24xlarge",
+				"m5.metal",
+
+				"m5d.large",
+				"m5d.xlarge",
+				"m5d.2xlarge",
+				"m5d.4xlarge",
+				"m5d.12xlarge",
+				"m5d.24xlarge",
+				"m5d.metal",
+
+				"m5a.large",
+				"m5a.xlarge",
+				"m5a.2xlarge",
+				"m5a.4xlarge",
+				"m5a.12xlarge",
+				"m5a.24xlarge",
+
+				"m5ad.large",
+				"m5ad.xlarge",
+				"m5ad.2xlarge",
+				"m5ad.4xlarge",
+				"m5ad.12xlarge",
+				"m5ad.24xlarge",
+
+                "c4.large",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+
+				"c5.large",
+                "c5.xlarge",
+                "c5.2xlarge",
+                "c5.4xlarge",
+                "c5.9xlarge",
+				"c5.18xlarge",
+
+				"c5d.large",
+                "c5d.xlarge",
+                "c5d.2xlarge",
+                "c5d.4xlarge",
+                "c5d.9xlarge",
+				"c5d.18xlarge",
+
+				"c5n.large",
+                "c5n.xlarge",
+                "c5n.2xlarge",
+                "c5n.4xlarge",
+                "c5n.9xlarge",
+				"c5n.18xlarge",
+
+				"r4.large",
+                "r4.xlarge",
+                "r4.2xlarge",
+                "r4.4xlarge",
+                "r4.8xlarge",
+				"r4.16xlarge",
+
+                "r5.large",
+                "r5.xlarge",
+                "r5.2xlarge",
+                "r5.4xlarge",
+                "r5.12xlarge",
+				"r5.24xlarge",
+				"r5.metal",
+
+				"r5d.large",
+                "r5d.xlarge",
+                "r5d.2xlarge",
+                "r5d.4xlarge",
+                "r5d.12xlarge",
+				"r5d.24xlarge",
+				"r5d.metal",
+
+				"r5a.large",
+                "r5a.xlarge",
+                "r5a.2xlarge",
+                "r5a.4xlarge",
+                "r5a.12xlarge",
+				"r5a.24xlarge",
+
+				"r5ad.large",
+                "r5ad.xlarge",
+                "r5ad.2xlarge",
+                "r5ad.4xlarge",
+                "r5ad.12xlarge",
+				"r5ad.24xlarge",
+
+				"i3.large",
+				"i3.xlarge",
+				"i3.2xlarge",
+				"i3.4xlarge",
+				"i3.8xlarge",
+				"i3.16xlarge"
+			]
+		},
+		"ImageId" : {
+			"Description" : "The ECS optimized image id to use for the cluster. Select arm64 or gpu variants if desired.",
+			"Type" : "AWS::SSM::Parameter::Value<String>",			
+			"Default" : "/aws/service/ecs/optimized-ami/amazon-linux-2/recommended",
+			"AllowedValues" : [
+				"/aws/service/ecs/optimized-ami/amazon-linux-2/recommended",
+				"/aws/service/ecs/optimized-ami/amazon-linux-2/arm64/recommended",
+				"/aws/service/ecs/optimized-ami/amazon-linux-2/gpu/recommended"
+			]
+		},
+		"ClusterNodeVolumeSize" : {
+			"Type" : "Number",
+			"Description" : "The size of the root volume in GiB for each cluster node",
+			"MinValue" : 1,
+			"MaxValue" : 16384,
+			"Default" : 30
+		},
+		"KeyName" : {
+			"Type" : "AWS::EC2::KeyPair::KeyName",
+			"Description" : "The key pair name to associate with the cluster nodes."			
+		},
+		"UseSpot" : {
+			"Description" : "Specify true to use Spot instances for the cluster.",
+			"Type" : "String",
+			"AllowedValues" : [
+				"true",
+				"false"
+			],
+			"Default" : "false"
+		},
+		"KmsKeyId" : {
+			"Description" : "You may optionally specify a KMS key arn to use to encrypt the EBS volumes of the cluster nodes, otherwise the default CMK will be used.",
+			"Type" : "String",
+			"AllowedPattern" : "(?:^$|^(arn:aws(?:-us-gov|-cn|-iso(?:-b)?)?:kms::)[0-9]{12}:.*$)",
+			"Default" : ""
+		},
+		"UseExistingCapacityReservation" : {
+			"Description" : "Specify false to not use an existing capacity reservation if one exists.",
+			"Type" : "String",
+			"AllowedValues" : [
+				"true",
+				"false"
+			],
+			"Default" : "true"
+		},
+		"ASGMinSize" : {
+			"Type" : "Number",
+			"Description" : "The minimum number of nodes in the ASG.",
+			"MinValue" : 1,
+			"Default" : 1		
+		},
+		"ASGMaxSize" : {
+			"Type" : "Number",
+			"Description" : "The maximum number of nodes in the ASG.",
+			"MinValue" : 1,
+			"Default" : 3
+		},	
+		"Cooldown" : {
+			"Type" : "Number",
+			"Description" : "The amount of time, in seconds, after a scaling activity completes before another scaling activity can start. The default value is 300. ",
+			"MinValue" : 1,
+			"Default" : 60
+		},
+		"HealthCheckGracePeriod" : {
+			"Type" : "Number",
+			"Description" : "The amount of time, in seconds, that Amazon EC2 Auto Scaling waits before checking the health status of an EC2 instance that has come into service.",
+			"MinValue" : 1,
+			"Default" : 180			 
+		},
+		
+		"LowThreshold" : {
+			"Type" : "Number",
+			"MinValue" : 1,
+			"Description" : "The minimum capacity buffer for schedulable containers. If there are less schedulable containers than this, a scale-out action will occur.",
+			"Default" : 1
+		},
+		"MaxContainerCPUUnits" : {
+			"Type" : "Number",
+			"MinValue" : 128,
+			"MaxValue" : 10240,
+			"Description" : "The maximum number of CPU Units assigned to a single container that will be run on this cluster. Valid values are between 128 (0.125 vCPUs) and 10240 (10 vCPUs). This number is used to help determine the maximum schedulable containers per node."
+		},
+		"MaxContainerMemory" : {
+			"Type" : "Number",
+			"MinValue" : 4,
+			"Description" : "The maximum amount of memory in MiB assigned to a single container that will be run on this cluster. The minimum is 4 MiB. This number is used to help determine the maximum schedulable containers per node."
+		},
+
+		"VpcId" : {
+			"Description" : "The VPC the nodes will be deployed into.",
+			"Type" : "AWS::EC2::VPC::Id"
+		},
+		"Subnets" : {
+			"Type" : "List<AWS::EC2::Subnet::Id>",
+			"Description" : "The subnets the ASG nodes will be deployed into.",
+			"MinLength" : 1,
+			"MaxLength" : 2047
+		},
+		"ClusterHostsHTTP" : {
+			"Description" : "Specify true if the cluster hosts an application over HTTP (port 80)",
+			"Type" : "String",
+			"AllowedValues" : [
+				"true",
+				"false"
+			],
+			"Default" : "false"
+		},
+		"ClusterHostsHTTPS" : {
+			"Description" : "Specify true if the cluster hosts an application over HTTPS (port 443)",
+			"Type" : "String",
+			"AllowedValues" : [
+				"true",
+				"false"
+			],
+			"Default" : "false"
+		},
+		"EnableSSH" : {
+			"Description" : "Specify true to enable SSH to the cluster nodes",
+			"Type" : "String",
+			"AllowedValues" : [
+				"true",
+				"false"
+			],
+			"Default" : "false"
+		},
+		"ManagementSourceIpCidr" : {
+			"Description" : "If you enabled SSH access, specify an IP CIDR block to allow access from. The default is 0.0.0.0/0 which is open to the world.",
+			"Type" : "String",
+			"AllowedPattern" : "^(?:(?:25[0-5]|2[0-4][0-9]|[01][0-9]{0,2}?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01][0-9]{0,2})(?:\\/(?:3[0-2]|[0-2]?[0-9]))?$",
+			"Default" : "0.0.0.0/0"
+		},
+		"AdditionalSecurityGroupIds" : {
+			"Description" : "Additional security group Ids to associate with the cluster nodes. Leave this blank if you don't have any.",
+			"Type" :  "CommaDelimitedList",
+			"Default" : ""
+		},
+		
+		"NotificationEmail"  : {
+            "Description" : "The email address notifications will be sent to when processing errors occur.",
+            "Type"        : "String"
+        },
+
+		"LogRetentionInDays" : {
+            "Type" : "Number",
+            "Description" : "The number of days to retain the CloudWatch Logs for the function. If this is set to 0, it will be infinite retention.",
+            "MinValue"    : 0,
+            "Default"     : 7
+        }
+	},
+
+	"Metadata" : {
+		"AWS::CloudFormation::Interface" : {
+			"ParameterGroups" : [
+				{
+					"Label" : {
+						"default" : "Network Configuration"
+					},
+					"Parameters" : [
+						"VpcId",
+						"Subnets",
+						"ManagementSourceIpCidr",
+						"ClusterHostsHTTP",
+						"ClusterHostsHTTPS",
+						"EnableSSH"
+					]
+				},
+				{
+					"Label" : {
+						"default" : "Auto Scaling Configuration"
+					},
+					"Parameters" : [
+						"InstanceType",
+						"ImageId",
+						"ClusterNodeVolumeSize",
+						"KeyName",
+						"KmsKeyId",
+						"ASGMinSize",
+						"ASGMaxSize",
+						"Cooldown",
+						"HealthCheckGracePeriod",
+						"UseExistingCapacityReservation",
+						"UseSpot"
+					]
+				},
+				{
+					"Label" : {
+						"default" : "CloudWatch Configuration"
+					},
+					"Parameters" : [
+						"NotificationEmail",
+						"LogRetentionInDays"
+					]
+				},
+				{
+					"Label" : {
+						"default" : "Auto Scaling Alarm Configuration"
+					},
+					"Parameters" : [
+						"LowThreshold",
+						"MaxContainerCPUUnits",
+						"MaxContainerMemory"
+					]
+				}
+			]
+		}
+	},
+
+	"Conditions" : {
+		"UseSpotInstances" : {
+			"Fn::Equals" : [
+				{
+					"Ref" : "UseSpot"
+				},
+				"true"
+			]
+		},
+		"UseCustomerManagedCMK" : {
+			"Fn::Not" : [
+				{
+					"Fn::Equals" : [
+						{
+							"Ref" : "KmsKeyId"
+						},
+						""
+					]
+				}
+			]
+		},
+		"UseCapacityReservation" : {
+			"Fn::Equals" : [
+				{
+					"Ref" : "UseExistingCapacityReservation"
+				},
+				"true"
+			]
+		},
+		"InfiniteRetention" : {
+            "Fn::Equals" : [
+                {
+                    "Ref" : "LogRetentionInDays"
+                },
+                0
+            ]
+        },
+		"AllowHTTP" : {
+			"Fn::Equals" : [
+				{
+					"Ref" : "ClusterHostsHTTP"
+				},
+				"true"
+			]
+		},
+		"AllowHTTPS" : {
+			"Fn::Equals" : [
+				{
+					"Ref" : "ClusterHostsHTTPS"
+				},
+				"true"
+			]
+		},
+		"AllowSSH" : {
+			"Fn::Equals" : [
+				{
+					"Ref" : "EnableSSH"
+				},
+				"true"
+			]
+		},
+		"UserProvidedAdditionalSGs" : {
+			"Fn::Not" : [
+				{
+					"Fn::Equals" : [
+						{
+							"Fn::Join" : [
+								"",
+								{
+									"Ref" : "AdditionalSecurityGroupIds"
+								}
+							]
+						},
+						""
+					]
+				}
+			]
+		}
+	},
+
+	"Resources" : {
+		"SNSTopic" : {
+            "Type" : "AWS::SNS::Topic",
+            "Properties" : {
+                "DisplayName" : {
+					"Fn::Sub" : "Auto Scaling ECS Cluster ${ECSCluster}"
+				},
+                "Subscription" : [
+                    {
+                        "Protocol" : "email",
+                        "Endpoint" : {
+                            "Ref" : "NotificationEmail"
+                        }
+                    }
+                ],
+                "TopicName"    : {
+					"Fn::Sub" : "${ECSCluster}_Notifications"
+				}
+            }
+        },
+		"ECSTaskDrainerDeadLetterQueue" : {
+			"Type" : "AWS::SQS::Queue",
+			"Properties" : {
+			}
+		},
+		"ASGLifecycleCompleterDeadLetterQueue" : {
+			"Type" : "AWS::SQS::Queue",
+			"Properties" : {
+			}
+		},
+		"MetricProducerDeadLetterQueue" : {
+			"Type" : "AWS::SQS::Queue",
+			"Properties" : {
+			}
+		},
+		"HighThresholdCalculatorDeadLetterQueue" : {
+			"Type" : "AWS::SQS::Queue",
+			"Properties" : {
+			}
+		},
+
+		"ECSTaskDrainerDeadLetterQueueDepthAlarm": {
+			"Type": "AWS::CloudWatch::Alarm",
+			"Properties": {
+				"AlarmDescription": "Alarm if the ECS Task Drainer function DLQ depth grows beyond 1 message in a 5 minute span.",
+				"Namespace": "AWS/SQS",
+				"MetricName": "ApproximateNumberOfMessagesVisible",
+				"Dimensions": [
+					{
+						"Name": "QueueName",
+						"Value" : { "Fn::GetAtt" : ["ECSTaskDrainerDeadLetterQueue", "QueueName"] }
+					}
+				],
+				"Statistic": "Sum",
+				"Period": "300",
+				"EvaluationPeriods": "1",
+				"Threshold": "1",
+				"ComparisonOperator": "GreaterThanOrEqualToThreshold",
+				"AlarmActions": [
+					{
+						"Ref": "SNSTopic"
+					}
+				]
+			}
+		},
+		"ASGLifecycleCompleterDeadLetterQueueDepthAlarm": {
+			"Type": "AWS::CloudWatch::Alarm",
+			"Properties": {
+				"AlarmDescription": "Alarm if the Auto Scaling Lifecycle Hook Completer function DLQ depth grows beyond 1 message in a 5 minute span.",
+				"Namespace": "AWS/SQS",
+				"MetricName": "ApproximateNumberOfMessagesVisible",
+				"Dimensions": [
+					{
+						"Name": "QueueName",
+						"Value" : { "Fn::GetAtt" : ["ASGLifecycleCompleterDeadLetterQueue", "QueueName"] }
+					}
+				],
+				"Statistic": "Sum",
+				"Period": "300",
+				"EvaluationPeriods": "1",
+				"Threshold": "1",
+				"ComparisonOperator": "GreaterThanOrEqualToThreshold",
+				"AlarmActions": [
+					{
+						"Ref": "SNSTopic"
+					}
+				]
+			}
+		},
+		"MetricProducerDeadLetterQueueDepthAlarm": {
+			"Type": "AWS::CloudWatch::Alarm",
+			"Properties": {
+				"AlarmDescription": "Alarm if the schedulable containers metric producer function DLQ depth grows beyond 1 message in a 5 minute span.",
+				"Namespace": "AWS/SQS",
+				"MetricName": "ApproximateNumberOfMessagesVisible",
+				"Dimensions": [
+					{
+						"Name": "QueueName",
+						"Value" : { "Fn::GetAtt" : ["MetricProducerDeadLetterQueue", "QueueName"] }
+					}
+				],
+				"Statistic": "Sum",
+				"Period": "300",
+				"EvaluationPeriods": "1",
+				"Threshold": "1",
+				"ComparisonOperator": "GreaterThanOrEqualToThreshold",
+				"AlarmActions": [
+					{
+						"Ref": "SNSTopic"
+					}
+				]
+			}
+		},
+		"HighThresholdCalculatorDeadLetterQueueDepthAlarm": {
+			"Type": "AWS::CloudWatch::Alarm",
+			"Properties": {
+				"AlarmDescription": "Alarm if the CloudWatch alarm high threshold calculator function DLQ depth grows beyond 1 message in a 5 minute span.",
+				"Namespace": "AWS/SQS",
+				"MetricName": "ApproximateNumberOfMessagesVisible",
+				"Dimensions": [
+					{
+						"Name": "QueueName",
+						"Value" : { "Fn::GetAtt" : ["HighThresholdCalculatorDeadLetterQueue", "QueueName"] }
+					}
+				],
+				"Statistic": "Sum",
+				"Period": "300",
+				"EvaluationPeriods": "1",
+				"Threshold": "1",
+				"ComparisonOperator": "GreaterThanOrEqualToThreshold",
+				"AlarmActions": [
+					{
+						"Ref": "SNSTopic"
+					}
+				]
+			}
+		},
+
+		"ECSTaskDrainerInvocationErrorAlarm" : {
+			"Type" : "AWS::CloudWatch::Alarm",
+			"Properties" : {
+				"ActionsEnabled" : "true",
+				"AlarmActions" : [
+					{
+						"Ref" : "SNSTopic"
+					}
+				],
+				"AlarmDescription" : {
+					"Fn::Sub" : "Alarm if ECS Task Drainer function for the ECS Cluster ${ECSCluster} Has Failures Once in 60 Seconds"
+				},
+				"ComparisonOperator" : "GreaterThanOrEqualToThreshold",
+				"Namespace" : "AWS/Lambda",
+				"MetricName" : "Errors",
+				"Dimensions" : [
+					{
+						"Name" : "FunctionName",
+						"Value" : {
+							"Ref" : "ECSTaskDrainer"
+						}
+					}
+				],
+				"Statistic" : "Sum",
+				"EvaluationPeriods" : "1",
+				"Threshold" : "1",
+				"Period" : "60",
+				"TreatMissingData" : "notBreaching",
+				"Unit" : "Count"
+			}
+		},
+		"ASGLifecycleCompleterInvocationErrorAlarm" : {
+			"Type" : "AWS::CloudWatch::Alarm",
+			"Properties" : {
+				"ActionsEnabled" : "true",
+				"AlarmActions" : [
+					{
+						"Ref" : "SNSTopic"
+					}
+				],
+				"AlarmDescription" : {
+					"Fn::Sub" : "Alarm if Auto Scaling Lifecycle Hook Completer function for the ECS Cluster ${ECSCluster} Has Failures Once in 60 Seconds"
+				},
+				"ComparisonOperator" : "GreaterThanOrEqualToThreshold",
+				"Namespace" : "AWS/Lambda",
+				"MetricName" : "Errors",
+				"Dimensions" : [
+					{
+						"Name" : "FunctionName",
+						"Value" : {
+							"Ref" : "AutoScalingLifecycleHookCompleter"
+						}
+					}
+				],
+				"Statistic" : "Sum",
+				"EvaluationPeriods" : "1",
+				"Threshold" : "1",
+				"Period" : "60",
+				"TreatMissingData" : "notBreaching",
+				"Unit" : "Count"
+			}
+		},
+		"MetricProducerInvocationErrorAlarm" : {
+			"Type" : "AWS::CloudWatch::Alarm",
+			"Properties" : {
+				"ActionsEnabled" : "true",
+				"AlarmActions" : [
+					{
+						"Ref" : "SNSTopic"
+					}
+				],
+				"AlarmDescription" : {
+					"Fn::Sub" : "Alarm if schedulable containers metric producer function for the ECS Cluster ${ECSCluster} Has Failures Once in 60 Seconds"
+				},
+				"ComparisonOperator" : "GreaterThanOrEqualToThreshold",
+				"Namespace" : "AWS/Lambda",
+				"MetricName" : "Errors",
+				"Dimensions" : [
+					{
+						"Name" : "FunctionName",
+						"Value" : {
+							"Ref" : "SchedulableContainerMetricProducer"
+						}
+					}
+				],
+				"Statistic" : "Sum",
+				"EvaluationPeriods" : "1",
+				"Threshold" : "1",
+				"Period" : "60",
+				"TreatMissingData" : "notBreaching",
+				"Unit" : "Count"
+			}
+		},
+		"HighThresholdCalculatorInvocationErrorAlarm" : {
+			"Type" : "AWS::CloudWatch::Alarm",
+			"Properties" : {
+				"ActionsEnabled" : "true",
+				"AlarmActions" : [
+					{
+						"Ref" : "SNSTopic"
+					}
+				],
+				"AlarmDescription" : {
+					"Fn::Sub" : "Alarm if high threshold calculator function for the ECS Cluster ${ECSCluster} Has Failures Once in 60 Seconds"
+				},
+				"ComparisonOperator" : "GreaterThanOrEqualToThreshold",
+				"Namespace" : "AWS/Lambda",
+				"MetricName" : "Errors",
+				"Dimensions" : [
+					{
+						"Name" : "FunctionName",
+						"Value" : {
+							"Ref" : "HighThresholdCalculator"
+						}
+					}
+				],
+				"Statistic" : "Sum",
+				"EvaluationPeriods" : "1",
+				"Threshold" : "1",
+				"Period" : "60",
+				"TreatMissingData" : "notBreaching",
+				"Unit" : "Count"
+			}
+		},
+		"MetricProducerEnsureInvocationAlarm" : {
+			"Type" : "AWS::CloudWatch::Alarm",
+			"Properties" : {
+				"ActionsEnabled" : "true",
+				"AlarmActions" : [
+					{
+						"Ref" : "SNSTopic"
+					}
+				],
+				"AlarmDescription" : {
+					"Fn::Sub" : "Alarm if schedulable containers metric producer for ECS Cluster ${ECSCluster} does not execute at least once a minute."					
+				},
+				"ComparisonOperator" : "LessThanThreshold",
+				"Namespace" : "AWS/Lambda",
+				"MetricName" : "Invocations",
+				"Dimensions" : [
+					{
+						"Name" : "FunctionName",
+						"Value" : {
+							"Ref" : "SchedulableContainerMetricProducer"
+						}
+					}
+				],
+				"Statistic" : "Sum",
+				"EvaluationPeriods" : "1",
+				"Threshold" : "1",
+				"Period" : "60",
+				"Unit" : "Count",
+				"TreatMissingData" : "breaching"
+			}
+		},
+		"HighThresholdCalculatorEnsureInvocationAlarm" : {
+			"Type" : "AWS::CloudWatch::Alarm",
+			"Properties" : {
+				"ActionsEnabled" : "true",
+				"AlarmActions" : [
+					{
+						"Ref" : "SNSTopic"
+					}
+				],
+				"AlarmDescription" : {
+					"Fn::Sub" : "Alarm if high threshold calculator for ECS Cluster ${ECSCluster} does not execute at least once an hour."					
+				},
+				"ComparisonOperator" : "LessThanThreshold",
+				"Namespace" : "AWS/Lambda",
+				"MetricName" : "Invocations",
+				"Dimensions" : [
+					{
+						"Name" : "FunctionName",
+						"Value" : {
+							"Ref" : "HighThresholdCalculator"
+						}
+					}
+				],
+				"Statistic" : "Sum",
+				"EvaluationPeriods" : "1",
+				"Threshold" : "1",
+				"Period" : "3600",
+				"Unit" : "Count",
+				"TreatMissingData" : "breaching"
+			}
+		},
+
+		"XRayWriteOnlyPolicy" : {
+			"Type" : "AWS::IAM::Policy",
+			"Properties" : {
+				"PolicyName" : "XRayPolicy",
+				"PolicyDocument" : {
+					"Version": "2012-10-17",
+					"Statement": [
+						{
+							"Effect": "Allow",
+							"Action": [
+								"xray:PutTraceSegments",
+								"xray:PutTelemetryRecords",
+								"xray:GetSamplingRules",
+								"xray:GetSamplingTargets",
+								"xray:GetSamplingStatisticSummaries"
+							],
+							"Resource": [
+								"*"
+							]
+						}
+					]
+				},
+				"Roles" : [
+					{
+						"Ref" : "ECSTaskDrainerExecutionRole"
+					},
+					{
+						"Ref" : "ASGLifecycleCompleterExecutionRole"
+					},
+					{
+						"Ref" : "CloudwatchMetricProducerExecutionRole"
+					},
+					{
+						"Ref" : "HighThresholdCalculatorExecutionRole"
+					}
+				]
+			}
+		},
+		"LambdaSNSPolicy"     : {
+            "Type" : "AWS::IAM::Policy",
+            "Properties" : {
+                "PolicyName" : "LambdaSNSPolicy",
+                "PolicyDocument" : {
+                    "Version" : "2012-10-17",
+                    "Statement" : [
+                        {
+                            "Effect" : "Allow",
+                            "Action" : [
+                                "sns:Publish"
+                            ],
+                            "Resource" : [
+                                {
+                                    "Ref" : "SNSTopic"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "Roles"          : [
+                    {
+						"Ref" : "ECSTaskDrainerExecutionRole"
+					},
+					{
+						"Ref" : "ASGLifecycleCompleterExecutionRole"
+					},
+					{
+						"Ref" : "CloudwatchMetricProducerExecutionRole"
+					},
+					{
+						"Ref" : "HighThresholdCalculatorExecutionRole"
+					}
+                ]
+            }
+        },
+
+		"ECSClusterNodeIAMRole" : {
+			"Type" : "AWS::IAM::Role",
+			"Properties" : {
+				"Path" : "/ecs/",
+				"AssumeRolePolicyDocument" : {
+					"Version" : "2012-10-17",
+					"Statement" : [
+						{
+							"Effect" : "Allow",
+							"Principal" : {
+								"Service" : [
+									"ec2.amazonaws.com"
+								]
+							},
+							"Action" : [
+								"sts:AssumeRole"
+							]
+						}
+					]
+				}
+			}
+		},
+		"ECSClusterECSPolicy" : {
+			"Type" : "AWS::IAM::Policy",
+			"Properties" : {
+				"PolicyDocument" : {
+					"Version": "2012-10-17",
+					"Statement": [
+						{
+							"Effect": "Allow",
+							"Action": [
+								"ecs:DeregisterContainerInstance",
+								"ecs:RegisterContainerInstance",
+								"ecs:SubmitContainerStateChange",
+								"ecs:SubmitTaskStateChange"
+							],
+							"Resource": {
+								"Fn::GetAtt" : [ "ECSCluster", "Arn" ]
+							}
+						},
+						{
+							"Effect": "Allow",
+							"Action": [
+								"ecs:Poll",
+								"ecs:StartTelemetrySession"
+							],
+							"Resource": {
+								"Fn::Sub" : "arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:container-instance/*"
+							}
+						},
+						{
+							"Effect": "Allow",
+							"Action": [
+								"ecs:DiscoverPollEndpoint"
+							],
+							"Resource": "*"
+						}
+					]
+				},
+				"PolicyName" : "ECSPolicy",
+				"Roles" : [
+					{
+						"Ref" : "ECSClusterNodeIAMRole"
+					}
+				]
+			}
+		},
+		"ECSClusterECRPolicy" : {
+			"Type" : "AWS::IAM::Policy",
+			"Properties" : {
+				"PolicyDocument" : {
+					"Version": "2012-10-17",
+					"Statement": [
+						{
+							"Effect": "Allow",
+							"Action": [
+								"ecr:GetAuthorizationToken",
+								"ecr:BatchCheckLayerAvailability",
+								"ecr:GetDownloadUrlForLayer",
+								"ecr:BatchGetImage"
+							],
+							"Resource": "*"
+						}
+					]
+				},
+				"PolicyName" : "ECRPolicy",
+				"Roles" : [
+					{
+						"Ref" : "ECSClusterNodeIAMRole"
+					}
+				]
+			}
+		},
+		"ECSClusterCWLPolicy" : {
+			"Type" : "AWS::IAM::Policy",
+			"Properties" : {
+				"PolicyDocument" : {
+					"Version": "2012-10-17",
+					"Statement": [
+						{
+							"Effect": "Allow",
+							"Action": [
+								"logs:CreateLogStream",
+								"logs:PutLogEvents"
+							],
+							"Resource" : {
+								"Fn::Sub" : "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:/aws/ecs/${ECSCloudWatchLogGroup}:*"
+							}
+						}
+					]
+				},
+				"PolicyName" : "CWLPolicy",
+				"Roles" : [
+					{
+						"Ref" : "ECSClusterNodeIAMRole"
+					}
+				]
+			}
+		},
+		"ECSClusterNodeInstanceProfile" : {
+			"Type" : "AWS::IAM::InstanceProfile",
+			"Properties" : {
+				"Path" : "/ecs/",
+				"Roles" : [
+					{
+						"Ref" : "ECSClusterNodeIAMRole"
+					}
+				]
+			}
+		},
+
+		"ECSTaskDrainerExecutionRole" : {
+            "Type" : "AWS::IAM::Role",
+            "Properties" : {
+				"Path" : "/lambda/",
+                "AssumeRolePolicyDocument" : {
+                    "Version" : "2012-10-17",
+                    "Statement" : [
+                        {
+                            "Effect" : "Allow",
+                            "Action" : [
+                                "sts:AssumeRole"
+                            ],
+                            "Principal" : {
+                                "Service" : [
+                                    "lambda.amazonaws.com"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+		"ECSTaskDrainerECSPolicy" : {
+			"Type" : "AWS::IAM::Policy",
+			"Properties" : {
+				"PolicyName" : "ECSPolicy",
+				"PolicyDocument" : {
+					"Version": "2012-10-17",
+					"Statement": [
+						{
+							"Effect": "Allow",
+							"Action": [
+								"ecs:UpdateContainerInstancesState"
+							],
+							"Resource": [
+								{
+									"Fn::Sub" : "arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:container-instance/*"
+								}
+							],
+							"Condition": {
+								"ArnEquals": {
+									"ecs:cluster": {
+										"Fn::GetAtt" : [ "ECSCluster", "Arn" ]
+									}
+								}
+							}
+						},
+						{
+							"Effect": "Allow",
+							"Action": [	
+								"ecs:ListContainerInstances"
+							],
+							"Resource": [
+								{
+									"Fn::GetAtt" : [ "ECSCluster", "Arn" ]
+								}
+							]
+						},
+						{
+							"Effect": "Allow",
+							"Action": [
+								"ecs:ListTasks"
+							],
+							"Resource": [
+								{
+									"Fn::Sub" : "arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:container-instance/*"
+								}
+							],
+							"Condition": {
+								"ArnEquals": {
+									"ecs:cluster": {
+										"Fn::GetAtt" : [ "ECSCluster", "Arn" ]
+									}
+								}
+							}
+						}
+					]
+				},
+				"Roles" : [
+					{
+						"Ref" : "ECSTaskDrainerExecutionRole"
+					}
+				]
+			}
+		},
+		"ECSTaskDrainerEC2Policy" : {
+			"Type" : "AWS::IAM::Policy",
+			"Properties" : {
+				"PolicyName" : "EC2Policy",
+				"PolicyDocument" : {
+					"Version": "2012-10-17",
+					"Statement": [
+						{
+							"Effect": "Allow",
+							"Action": [
+								"ec2:DescribeInstances"
+							],
+							"Resource": [
+								"*"
+							]
+						}
+					]
+				},
+				"Roles" : [
+					{
+						"Ref" : "ECSTaskDrainerExecutionRole"
+					}
+				]
+			}
+		},
+		"ECSTaskDrainerCWLPolicy"     : {
+            "Type" : "AWS::IAM::Policy",
+            "Properties" : {
+                "PolicyName" : "CWLPolicy",
+                "PolicyDocument" : {
+                    "Version" : "2012-10-17",
+                    "Statement" : [
+                        {
+                            "Effect" : "Allow",
+                            "Action" : [
+                                "logs:CreateLogStream",
+                                "logs:DescribeLogStreams",
+                                "logs:PutLogEvents"
+                            ],
+                            "Resource" : {
+                                "Fn::Sub" : "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ECSTaskDrainer}:*"
+                            }
+                        },
+						{
+                            "Effect" : "Allow",
+                            "Action" : [
+                                "logs:DescribeLogGroups"
+                            ],
+                            "Resource" : {
+                                "Fn::Sub" : "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:*"
+                            }
+                        }
+                    ]
+                },
+                "Roles"          : [
+                    {
+                        "Ref" : "ECSTaskDrainerExecutionRole"
+                    }
+                ]
+            }
+        },
+		"ECSTaskDrainerSQSPolicy"     : {
+            "Type" : "AWS::IAM::Policy",
+            "Properties" : {
+                "PolicyName" : "SQSPolicy",
+                "PolicyDocument" : {
+                    "Version" : "2012-10-17",
+                    "Statement" : [
+                        {
+                            "Effect" : "Allow",
+                            "Action" : [
+                                "sqs:SendMessage"
+                            ],
+                            "Resource" : [
+                                {
+                                    "Fn::GetAtt" : [ "ECSTaskDrainerDeadLetterQueue", "Arn" ]
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "Roles"          : [
+                    {
+                        "Ref" : "ECSTaskDrainerExecutionRole"
+                    }
+                ]
+            }
+        },
+		"ECSTaskDrainerASGPolicy" : {
+			"Type" : "AWS::IAM::Policy",
+			"Properties" : {
+				"PolicyName" : "ASGPolicy",
+				"PolicyDocument" : {
+					"Version": "2012-10-17",
+					"Statement": [
+						{
+							"Effect": "Allow",
+							"Action": [
+								"autoscaling:CompleteLifecycleAction"
+							],
+							"Resource": "*"
+						}
+					]
+				},
+				"Roles" : [
+					{
+						"Ref" : "ECSTaskDrainerExecutionRole"
+					}
+				]
+			}
+		},
+
+		"ASGLifecycleCompleterExecutionRole" : {
+            "Type" : "AWS::IAM::Role",
+            "Properties" : {
+				"Path" : "/lambda/",
+                "AssumeRolePolicyDocument" : {
+                    "Version" : "2012-10-17",
+                    "Statement" : [
+                        {
+                            "Effect" : "Allow",
+                            "Action" : [
+                                "sts:AssumeRole"
+                            ],
+                            "Principal" : {
+                                "Service" : [
+                                    "lambda.amazonaws.com"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+		"ASGLifecycleCompleterASGPolicy" : {
+			"Type" : "AWS::IAM::Policy",
+			"Properties" : {
+				"PolicyName" : "ASGPolicy",
+				"PolicyDocument" : {
+					"Version": "2012-10-17",
+					"Statement": [
+						{
+							"Effect": "Allow",
+							"Action": [
+								"autoscaling:CompleteLifecycleAction"
+							],
+							"Resource": "*"
+						}
+					]
+				},
+				"Roles" : [
+					{
+						"Ref" : "ASGLifecycleCompleterExecutionRole"
+					}
+				]
+			}
+		},
+		"ASGLifecycleCompleterECSPolicy" : {
+			"Type" : "AWS::IAM::Policy",
+			"Properties" : {
+				"PolicyName" : "ECSPolicy",
+				"PolicyDocument" : {
+					"Version": "2012-10-17",
+					"Statement": [
+						{
+							"Effect": "Allow",
+							"Action": [
+								"ecs:ListTasks"
+							],
+							"Resource": [
+								{
+									"Fn::Sub" : "arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:container-instance/*"
+								}
+							],
+							"Condition": {
+								"ArnEquals": {
+									"ecs:cluster": {
+										"Fn::GetAtt" : [ "ECSCluster", "Arn" ]
+									}
+								}
+							}
+						}
+					]
+				},
+				"Roles" : [
+					{
+						"Ref" : "ASGLifecycleCompleterExecutionRole"
+					}
+				]
+			}
+		},
+		"ASGLifecycleCompleterEC2Policy" : {
+			"Type" : "AWS::IAM::Policy",
+			"Properties" : {
+				"PolicyName" : "EC2Policy",
+				"PolicyDocument" : {
+					"Version": "2012-10-17",
+					"Statement": [
+						{
+							"Effect": "Allow",
+							"Action": [
+								"ec2:DescribeInstances"
+							],
+							"Resource": [
+								"*"
+							]
+						}
+					]
+				},
+				"Roles" : [
+					{
+						"Ref" : "ASGLifecycleCompleterExecutionRole"
+					}
+				]
+			}
+		},
+		"ASGLifecycleCompleterCWLPolicy"     : {
+            "Type" : "AWS::IAM::Policy",
+            "Properties" : {
+                "PolicyName" : "CWLPolicy",
+                "PolicyDocument" : {
+                    "Version" : "2012-10-17",
+                    "Statement" : [
+                        {
+                            "Effect" : "Allow",
+                            "Action" : [
+                                "logs:CreateLogStream",
+                                "logs:DescribeLogStreams",
+                                "logs:PutLogEvents"
+                            ],
+                            "Resource" : {
+                                "Fn::Sub" : "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AutoScalingLifecycleHookCompleter}:*"
+                            }
+                        },
+						{
+                            "Effect" : "Allow",
+                            "Action" : [
+                                "logs:DescribeLogGroups"
+                            ],
+                            "Resource" : {
+                                "Fn::Sub" : "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:*"
+                            }
+                        }
+                    ]
+                },
+                "Roles"          : [
+                    {
+                        "Ref" : "ASGLifecycleCompleterExecutionRole"
+                    }
+                ]
+            }
+        },
+		"ASGLifecycleCompleterSQSPolicy"     : {
+            "Type" : "AWS::IAM::Policy",
+            "Properties" : {
+                "PolicyName" : "SQSPolicy",
+                "PolicyDocument" : {
+                    "Version" : "2012-10-17",
+                    "Statement" : [
+                        {
+                            "Effect" : "Allow",
+                            "Action" : [
+                                "sqs:SendMessage"
+                            ],
+                            "Resource" : [
+                                {
+                                    "Fn::GetAtt" : [ "ASGLifecycleCompleterDeadLetterQueue", "Arn" ]
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "Roles"          : [
+                    {
+                        "Ref" : "ASGLifecycleCompleterExecutionRole"
+                    }
+                ]
+            }
+        },
+
+		"CloudwatchMetricProducerExecutionRole" : {
+			"Type" : "AWS::IAM::Role",
+            "Properties" : {
+				"Path" : "/lambda/",
+                "AssumeRolePolicyDocument" : {
+                    "Version" : "2012-10-17",
+                    "Statement" : [
+                        {
+                            "Effect" : "Allow",
+                            "Action" : [
+                                "sts:AssumeRole"
+                            ],
+                            "Principal" : {
+                                "Service" : [
+                                    "lambda.amazonaws.com"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            }
+		},
+		"CloudwatchMetricProducerCWPolicy" : {
+			"Type" : "AWS::IAM::Policy",
+			"Properties" : {
+				"PolicyName" : "CWPolicy",
+				"PolicyDocument" : {
+					"Version": "2012-10-17",
+					"Statement": [
+						{
+							"Effect": "Allow",
+							"Action": [
+								"cloudwatch:PutMetricData",
+								"cloudwatch:GetMetricData"
+							],
+							"Resource": "*"
+						}
+					]
+				},
+				"Roles" : [
+					{
+						"Ref" : "CloudwatchMetricProducerExecutionRole"
+					}
+				]
+			}
+		},
+		"CloudwatchMetricProducerCWLPolicy"     : {
+            "Type" : "AWS::IAM::Policy",
+            "Properties" : {
+                "PolicyName" : "CWLPolicy",
+                "PolicyDocument" : {
+                    "Version" : "2012-10-17",
+                    "Statement" : [
+                        {
+                            "Effect" : "Allow",
+                            "Action" : [
+                                "logs:CreateLogStream",
+                                "logs:DescribeLogStreams",
+                                "logs:PutLogEvents"
+                            ],
+                            "Resource" : {
+                                "Fn::Sub" : "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${SchedulableContainerMetricProducer}:*"
+                            }
+                        },
+						{
+                            "Effect" : "Allow",
+                            "Action" : [
+                                "logs:DescribeLogGroups"
+                            ],
+                            "Resource" : {
+                                "Fn::Sub" : "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:*"
+                            }
+                        }
+                    ]
+                },
+                "Roles"          : [
+                    {
+                        "Ref" : "CloudwatchMetricProducerExecutionRole"
+                    }
+                ]
+            }
+        },
+		"CloudwatchMetricProducerSQSPolicy"     : {
+            "Type" : "AWS::IAM::Policy",
+            "Properties" : {
+                "PolicyName" : "SQSPolicy",
+                "PolicyDocument" : {
+                    "Version" : "2012-10-17",
+                    "Statement" : [
+                        {
+                            "Effect" : "Allow",
+                            "Action" : [
+                                "sqs:SendMessage"
+                            ],
+                            "Resource" : [
+                                {
+                                    "Fn::GetAtt" : [ "MetricProducerDeadLetterQueue", "Arn" ]
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "Roles"          : [
+                    {
+                        "Ref" : "CloudwatchMetricProducerExecutionRole"
+                    }
+                ]
+            }
+        },
+		"CloudwatchMetricProducerECSPolicy" : {
+			"Type" : "AWS::IAM::Policy",
+			"Properties" : {
+				"PolicyName" : "ECSPolicy",
+				"PolicyDocument" : {
+					"Version": "2012-10-17",
+					"Statement": [
+						{
+							"Effect": "Allow",
+							"Action": [
+								"ecs:DescribeContainerInstances"
+							],
+							"Resource": [
+								{
+									"Fn::Sub" : "arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:container-instance/*"
+								}
+							],
+							"Condition": {
+								"ArnEquals": {
+									"ecs:cluster": {
+										"Fn::GetAtt" : [ "ECSCluster", "Arn" ]
+									}
+								}
+							}
+						},
+						{
+							"Effect": "Allow",
+							"Action": [	
+								"ecs:ListContainerInstances"
+							],
+							"Resource": [
+								{
+									"Fn::GetAtt" : [ "ECSCluster", "Arn" ]
+								}
+							]
+						}
+					]
+				},
+				"Roles" : [
+					{
+						"Ref" : "CloudwatchMetricProducerExecutionRole"
+					}
+				]
+			}
+		},
+
+		"HighThresholdCalculatorExecutionRole" : {
+			"Type" : "AWS::IAM::Role",
+            "Properties" : {
+				"Path" : "/lambda/",
+                "AssumeRolePolicyDocument" : {
+                    "Version" : "2012-10-17",
+                    "Statement" : [
+                        {
+                            "Effect" : "Allow",
+                            "Action" : [
+                                "sts:AssumeRole"
+                            ],
+                            "Principal" : {
+                                "Service" : [
+                                    "lambda.amazonaws.com"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            }
+		},
+		"HighThresholdCalculatorCWLPolicy"     : {
+            "Type" : "AWS::IAM::Policy",
+            "Properties" : {
+                "PolicyName" : "CWLPolicy",
+                "PolicyDocument" : {
+                    "Version" : "2012-10-17",
+                    "Statement" : [
+                        {
+                            "Effect" : "Allow",
+                            "Action" : [
+                                "logs:CreateLogStream",
+                                "logs:DescribeLogStreams",
+                                "logs:PutLogEvents"
+                            ],
+                            "Resource" : {
+                                "Fn::Sub" : "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${HighThresholdCalculator}:*"
+                            }
+                        },
+						{
+                            "Effect" : "Allow",
+                            "Action" : [
+                                "logs:DescribeLogGroups"
+                            ],
+                            "Resource" : {
+                                "Fn::Sub" : "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:*"
+                            }
+                        }
+                    ]
+                },
+                "Roles"          : [
+                    {
+                        "Ref" : "HighThresholdCalculatorExecutionRole"
+                    }
+                ]
+            }
+        },
+		"HighThresholdCalculatorECSPolicy" : {
+			"Type" : "AWS::IAM::Policy",
+			"Properties" : {
+				"PolicyName" : "ECSPolicy",
+				"PolicyDocument" : {
+					"Version": "2012-10-17",
+					"Statement": [
+						{
+							"Effect": "Allow",
+							"Action": [
+								"ecs:DescribeContainerInstances"
+							],
+							"Resource": [
+								{
+									"Fn::Sub" : "arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:container-instance/*"
+								}
+							],
+							"Condition": {
+								"ArnEquals": {
+									"ecs:cluster": {
+										"Fn::GetAtt" : [ "ECSCluster", "Arn" ]
+									}
+								}
+							}
+						},
+						{
+							"Effect": "Allow",
+							"Action": [	
+								"ecs:ListContainerInstances"
+							],
+							"Resource": [
+								{
+									"Fn::GetAtt" : [ "ECSCluster", "Arn" ]
+								}
+							]
+						}
+					]
+				},
+				"Roles" : [
+					{
+						"Ref" : "HighThresholdCalculatorExecutionRole"
+					}
+				]
+			}
+		},
+		"HighThresholdCalculatorCWPolicy" : {
+			"Type" : "AWS::IAM::Policy",
+			"Properties" : {
+				"PolicyName" : "CWPolicy",
+				"PolicyDocument" : {
+					"Version": "2012-10-17",
+					"Statement": [
+						{
+							"Effect": "Allow",
+							"Action": [
+								"cloudwatch:DescribeAlarms",
+								"cloudwatch:PutMetricAlarm"
+							],
+							"Resource": [
+								{
+									"Fn::GetAtt" : [ "ScaleInAlarmWhenSchedulableContainerCapacityHigh", "Arn" ]
+								}
+							]
+						}
+					]
+				},
+				"Roles" : [
+					{
+						"Ref" : "HighThresholdCalculatorExecutionRole"
+					}
+				]
+			}
+		},
+		"HighThresholdCalculatorSQSPolicy"     : {
+            "Type" : "AWS::IAM::Policy",
+            "Properties" : {
+                "PolicyName" : "SQSPolicy",
+                "PolicyDocument" : {
+                    "Version" : "2012-10-17",
+                    "Statement" : [
+                        {
+                            "Effect" : "Allow",
+                            "Action" : [
+                                "sqs:SendMessage"
+                            ],
+                            "Resource" : [
+                                {
+                                    "Fn::GetAtt" : [ "HighThresholdCalculatorDeadLetterQueue", "Arn" ]
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "Roles"          : [
+                    {
+                        "Ref" : "HighThresholdCalculatorExecutionRole"
+                    }
+                ]
+            }
+        },
+
+		"ECSCloudWatchLogGroup"  : {
+            "Type" : "AWS::Logs::LogGroup",
+            "Properties" : {
+                "LogGroupName" : {
+						"Fn::Sub" : "/aws/ecs/${ECSCluster}"
+					},
+					"RetentionInDays" : {
+                    "Fn::If" : [
+                        "InfiniteRetention",
+                        {
+                            "Ref" : "AWS::NoValue"
+                        },
+                        {
+                            "Ref" : "LogRetentionInDays"
+                        }
+                    ]
+                }
+            }
+        },
+		"CloudWatchLogGroupECSTaskDrainer"  : {
+            "Type" : "AWS::Logs::LogGroup",
+            "Properties" : {
+                "LogGroupName" : {
+					"Fn::Sub" : "/aws/lambda/${ECSTaskDrainer}"
+				},
+                "RetentionInDays" : {
+                    "Fn::If" : [
+                        "InfiniteRetention",
+                        {
+                            "Ref" : "AWS::NoValue"
+                        },
+                        {
+                            "Ref" : "LogRetentionInDays"
+                        }
+                    ]
+                }
+            }
+        },
+		"CloudWatchLogGroupASGLifecycleCompleter"  : {
+            "Type" : "AWS::Logs::LogGroup",
+            "Properties" : {
+                "LogGroupName" : {
+					"Fn::Sub" : "/aws/lambda/${AutoScalingLifecycleHookCompleter}"
+				},
+                "RetentionInDays" : {
+                    "Fn::If" : [
+                        "InfiniteRetention",
+                        {
+                            "Ref" : "AWS::NoValue"
+                        },
+                        {
+                            "Ref" : "LogRetentionInDays"
+                        }
+                    ]
+                }
+            }
+        },
+		"CloudWatchLogGroupMetricProducer"  : {
+            "Type" : "AWS::Logs::LogGroup",
+            "Properties" : {
+                "LogGroupName" : {
+					"Fn::Sub" : "/aws/lambda/${SchedulableContainerMetricProducer}"
+				},
+                "RetentionInDays" : {
+                    "Fn::If" : [
+                        "InfiniteRetention",
+                        {
+                            "Ref" : "AWS::NoValue"
+                        },
+                        {
+                            "Ref" : "LogRetentionInDays"
+                        }
+                    ]
+                }
+            }
+        },
+		"CloudWatchLogGroupHighThresholdCalculator"  : {
+            "Type" : "AWS::Logs::LogGroup",
+            "Properties" : {
+                "LogGroupName" : {
+					"Fn::Sub" : "/aws/lambda/${HighThresholdCalculator}"
+				},
+                "RetentionInDays" : {
+                    "Fn::If" : [
+                        "InfiniteRetention",
+                        {
+                            "Ref" : "AWS::NoValue"
+                        },
+                        {
+                            "Ref" : "LogRetentionInDays"
+                        }
+                    ]
+                }
+            }
+        },
+
+		"ECSLaunchTemplate" : {
+			"Type" : "AWS::EC2::LaunchTemplate",
+			"Properties" : {
+				"LaunchTemplateData" : {
+					"InstanceType" : {
+						"Ref" : "InstanceType"
+					},
+					"ImageId" : {
+						"Fn::Select" : [
+							1,
+							{
+								"Fn::Split" : [
+									"\"",
+									{
+										"Fn::Select" : [
+											1,
+											{
+												"Fn::Split" : [
+													":",
+													{
+														"Fn::Select" : [
+															2,
+															{
+																"Fn::Split" : [
+																	",",
+																	{
+																		"Ref" : "ImageId"
+																	}
+																]
+															}
+														]
+													}
+												]
+											}
+										]
+									}
+								]
+							}
+						]
+					},
+					"KeyName" : {
+						"Ref" : "KeyName"
+					},
+					"EbsOptimized" : true,
+					"InstanceMarketOptions" : {
+						"Fn::If" : [
+							"UseSpotInstances",
+							{
+								"MarketType" :  "spot"	 
+							},
+							{
+								"Ref" : "AWS::NoValue"
+							}
+						]
+					},
+					"BlockDeviceMappings" : [
+						{
+							"DeviceName" : "/dev/sda1",
+							"Ebs" : {
+								"Encrypted" : true,
+								"KmsKeyId" : {
+									"Fn::If" : [
+										"UseCustomerManagedCMK",
+										{
+											"Ref" : "KmsKeyId"
+										},
+										{
+											"Ref" : "AWS::NoValue"
+										}
+									]
+								},
+								"VolumeSize" : {
+									"Ref" : "ClusterNodeVolumeSize"
+								},
+								"DeleteOnTermination" : true,
+								"VolumeType" : "gp2"
+							}
+						}
+					],
+					"CapacityReservationSpecification" : {
+						"Fn::If" : [
+							"UseCapacityReservation",
+							{
+								"CapacityReservationPreference" : "open"
+							},
+							{
+								"Ref" : "AWS::NoValue"
+							}
+						]
+					},
+					"IamInstanceProfile" : {
+						"Arn" : {
+							"Fn::GetAtt" : [ "ECSClusterNodeInstanceProfile", "Arn" ]
+						}
+					},
+					"UserData" : {
+						"Fn::Base64" : {
+							"Fn::Join" : [
+								"",
+								[
+									"#!/bin/bash -xe\n",
+									"echo ECS_CLUSTER=",
+									{
+										"Ref" : "ECSCluster"
+									},
+									" >> /etc/ecs/ecs.config\n"
+								]
+							]
+						}
+					},
+					"SecurityGroupIds" :{						
+						"Fn::Split" : [
+							",",						
+							{
+								"Fn::Join" : [
+									",",
+									[
+										{
+											"Fn::GetAtt" : [ "ClusterSecurityGroup", "GroupId" ]
+										},
+										{	
+											"Fn::If" : [
+												"UserProvidedAdditionalSGs",
+												{
+													"Fn::Join" : [
+														",",
+														{
+															"Ref" : "AdditionalSecurityGroupIds"
+														}
+													]
+												},
+												{
+													"Ref" : "AWS::NoValue"
+												}
+											]
+										}
+									]
+								]
+							}							
+						]
+					}
+				}
+			}
+		},
+		"ClusterSecurityGroup" : {
+			"Type" : "AWS::EC2::SecurityGroup",
+			"Properties" : {
+				"GroupDescription" : {
+					"Fn::Sub" : "Provides inbound access to the ECS Cluster ${ECSCluster}"
+				},
+				"VpcId" : {
+					"Ref" : "VpcId"
+				}
+			}
+		},
+		"HTTPIngress" : {
+			"Type" : "AWS::EC2::SecurityGroupIngress",
+			"Condition" : "AllowHTTP",
+			"Properties" : {
+				"FromPort" : "80",
+				"ToPort" : "80",
+				"CidrIp" : "0.0.0.0/0",
+				"IpProtocol" : "tcp",
+				"GroupId" : {
+					"Fn::GetAtt" : [ "ClusterSecurityGroup", "GroupId" ]
+				}
+			}
+		},
+		"HTTPSIngress" : {
+			"Type" : "AWS::EC2::SecurityGroupIngress",
+			"Condition" : "AllowHTTPS",
+			"Properties" : {
+				"FromPort" : "443",
+				"ToPort" : "443",
+				"CidrIp" : "0.0.0.0/0",
+				"IpProtocol" : "tcp",
+				"GroupId" : {
+					"Fn::GetAtt" : [ "ClusterSecurityGroup", "GroupId" ]
+				}
+			}
+		},
+		"SSHIngress" : {
+			"Type" : "AWS::EC2::SecurityGroupIngress",
+			"Condition" : "AllowSSH",
+			"Properties" : {
+				"FromPort" : "22",
+				"ToPort" : "22",
+				"CidrIp" : {
+					"Ref" : "ManagementSourceIpCidr"
+				},
+				"IpProtocol" : "tcp",
+				"GroupId" : {
+					"Fn::GetAtt" : [ "ClusterSecurityGroup", "GroupId" ]
+				}
+			}
+		},
+
+		"ECSClusterASG" : {
+			"Type" : "AWS::AutoScaling::AutoScalingGroup",
+			"Properties" : {
+				"Cooldown" : {
+					"Ref" : "Cooldown"
+				},
+				"HealthCheckGracePeriod" : {
+					"Ref" : "HealthCheckGracePeriod"
+				},
+				"HealthCheckType" : "EC2",
+				"LaunchTemplate" : {
+					"LaunchTemplateId" : {
+						"Ref" : "ECSLaunchTemplate"
+					},
+					"Version" : {
+						"Fn::GetAtt" : [ "ECSLaunchTemplate", "LatestVersionNumber" ]
+					}
+				},
+				"MaxSize" : {
+					"Ref" : "ASGMaxSize"
+				},
+				"MinSize" : {
+					"Ref" : "ASGMinSize"
+				},				 
+				"VPCZoneIdentifier" : {
+					"Ref" : "Subnets"
+				}
+			}
+		},
+		"ScaleInLifecycleHook" : {
+			"Type" : "AWS::AutoScaling::LifecycleHook",
+			"Properties" : {
+				"AutoScalingGroupName" : {
+					"Ref" : "ECSClusterASG"
+				},
+				"DefaultResult" : "CONTINUE",
+				"LifecycleTransition" :  "autoscaling:EC2_INSTANCE_TERMINATING",
+				"HeartbeatTimeout" : 600
+			}
+		},
+		"ScaleOutAction" : {
+			"Type" : "AWS::AutoScaling::ScalingPolicy",
+			"Properties" : {
+				"AdjustmentType" : "ChangeInCapacity",
+				"AutoScalingGroupName" : {
+					"Ref" : "ECSClusterASG"
+				},
+				"Cooldown" : {
+					"Ref" : "Cooldown"
+				},
+				"PolicyType" : "SimpleScaling",
+				"ScalingAdjustment" : 1
+			}
+		},
+		"ScaleInAction" : {
+			"Type" : "AWS::AutoScaling::ScalingPolicy",
+			"Properties" : {
+				"AdjustmentType" : "ChangeInCapacity",
+				"AutoScalingGroupName" : {
+					"Ref" : "ECSClusterASG"
+				},
+				"Cooldown" : {
+					"Ref" : "Cooldown"
+				},
+				"PolicyType" : "SimpleScaling",
+				"ScalingAdjustment" : -1
+			}
+		},
+
+		"ECSCluster" : {
+			"Type" : "AWS::ECS::Cluster",
+			"Properties" : {
+			}
+		},
+
+		"ECSTaskDrainer" : {
+			"Type" : "AWS::Serverless::Function",
+			"Properties": {
+				"Handler": "AutoScalingECSCluster::BAMCIS.LambdaFunctions.AutoScalingECSCluster.Entrypoint::DrainContainersAsync",
+				"Description" : {
+					"Fn::Sub" : "Initiates task draining for Auto Scaling scale-in events for the ECS Cluster ${ECSCluster}."
+				},
+				"Runtime": "dotnetcore2.1",
+				"CodeUri": "",
+				"MemorySize": 256,
+				"Timeout": 30,
+				"Tracing" : "Active",
+				"Role": {
+					"Fn::GetAtt" : [ "ECSTaskDrainerExecutionRole", "Arn" ]
+				},
+				"DeadLetterQueue" : {
+					"Type" : "SQS",
+					"TargetArn" : {
+						"Fn::GetAtt" : [ "ECSTaskDrainerDeadLetterQueue", "Arn" ]
+					}
+				},
+				"Environment" : {
+					"Variables" : {
+						"ECS_CLUSTER" : {
+							"Ref" : "ECSCluster"
+						},
+						"SNS_TOPIC" : {
+							"Ref" : "SNSTopic"
+						},
+						"ASG_NAME" : {
+							"Ref" : "ECSClusterASG"
+						},
+						"LIFECYCLE_HOOK_NAME" : {
+							"Ref" : "ScaleInLifecycleHook"
+						}
+					}
+				}
+			},
+			"DependsOn" : [
+				"XRayWriteOnlyPolicy",
+				"ECSTaskDrainerSQSPolicy"
+			]
+		},
+		"ECSTaskDrainerLambdaInvokePermission" : {
+			"Type" : "AWS::Lambda::Permission",
+			"Properties" : {
+				"FunctionName" : {
+					"Ref" : "ECSTaskDrainer"
+				},
+				"Action" : "lambda:InvokeFunction",
+				"Principal" : "events.amazonaws.com",
+				"SourceArn" : {
+					"Fn::GetAtt" : [ "ASGInstanceTerminateEventRule", "Arn" ]
+				}
+			}
+		},
+
+		"AutoScalingLifecycleHookCompleter" : {
+			"Type" : "AWS::Serverless::Function",
+			"Properties": {
+				"Handler": "AutoScalingECSCluster::BAMCIS.LambdaFunctions.AutoScalingECSCluster.Entrypoint::CompleteLifecycleHookAsync",
+				"Description" : {
+					"Fn::Sub" : "Completes Auto Scaling Lifecycle hooks for the ECS Cluster ${ECSCluster}."
+				},
+				"Runtime": "dotnetcore2.1",
+				"CodeUri": "",
+				"MemorySize": 256,
+				"Timeout": 30,
+				"Tracing" : "Active",
+				"Role": {
+					"Fn::GetAtt" : [ "ASGLifecycleCompleterExecutionRole", "Arn" ]
+				},
+				"DeadLetterQueue" : {
+					"Type" : "SQS",
+					"TargetArn" : {
+						"Fn::GetAtt" : [ "ASGLifecycleCompleterDeadLetterQueue", "Arn" ]
+					}
+				},
+				"Environment" : {
+					"Variables" : {
+						"SNS_TOPIC" : {
+							"Ref" : "SNSTopic"
+						}
+					}
+				}
+			},
+			"DependsOn" : [
+				"XRayWriteOnlyPolicy",
+				"ASGLifecycleCompleterSQSPolicy"
+			]
+		},
+		"LifecycleLambdaInvokePermission" : {
+			"Type" : "AWS::Lambda::Permission",
+			"Properties" : {
+				"FunctionName" : {
+					"Ref" : "AutoScalingLifecycleHookCompleter"
+				},
+				"Action" : "lambda:InvokeFunction",
+				"Principal" : "events.amazonaws.com",
+				"SourceArn" : {
+					"Fn::GetAtt" : [ "TaskStateChangeEventRule", "Arn" ]
+				}
+			}
+		},
+
+		"SchedulableContainerMetricProducer" : {
+			"Type" : "AWS::Serverless::Function",
+			"Properties": {
+				"Handler": "AutoScalingECSCluster::BAMCIS.LambdaFunctions.AutoScalingECSCluster.Entrypoint::PutSchedulableContainerMetricAsync",
+				"Description" : {
+					"Fn::Sub" : "Creates the schedulable containers metric for the ECS Cluster ${ECSCluster}."
+				},
+				"Runtime": "dotnetcore2.1",
+				"CodeUri": "",
+				"MemorySize": 256,
+				"Timeout": 300,
+				"Tracing" : "Active",
+				"DeadLetterQueue" : {
+					"Type" : "SQS",
+					"TargetArn" : {
+						"Fn::GetAtt" : [ "MetricProducerDeadLetterQueue", "Arn" ]
+					}
+				},
+				"Environment" : {
+					"Variables" : {
+						"MAX_CPU" : {
+							"Ref" : "MaxContainerCPUUnits"
+						},
+						"MAX_MEMORY" : {
+							"Ref" : "MaxContainerMemory"
+						},
+						"ECS_CLUSTER" : {
+							"Ref" : "ECSCluster"
+						},
+						"SNS_TOPIC" : {
+							"Ref" : "SNSTopic"
+						}
+					}
+				},
+				"Role": {
+					"Fn::GetAtt" : [ "CloudwatchMetricProducerExecutionRole", "Arn" ]
+				},
+				"Events" : {
+					"MinuteMetric" : {
+						"Type" : "Schedule",
+						"Properties" : {
+							"Schedule" : "rate(1 minute)"
+						}
+					}
+				}
+			},
+			"DependsOn" : [
+				"XRayWriteOnlyPolicy",
+				"CloudwatchMetricProducerSQSPolicy"
+			]
+		},
+
+		"HighThresholdCalculator" : {
+			"Type" : "AWS::Serverless::Function",
+			"Properties": {
+				"Handler": "AutoScalingECSCluster::BAMCIS.LambdaFunctions.AutoScalingECSCluster.Entrypoint::DetermineHighThresholdAsync",
+				"Description" : {
+					"Fn::Sub" : "Determines the high schedulable containers threshold for the ECS Cluster ${ECSCluster} that triggers scale-in."
+				},
+				"Runtime": "dotnetcore2.1",
+				"CodeUri": "",
+				"MemorySize": 256,
+				"Timeout": 300,
+				"Tracing" : "Active",
+				"DeadLetterQueue" : {
+					"Type" : "SQS",
+					"TargetArn" : {
+						"Fn::GetAtt" : [ "HighThresholdCalculatorDeadLetterQueue", "Arn" ]
+					}
+				},
+				"Environment" : {
+					"Variables" : {
+						"CW_ALARM_NAME" : {
+							"Ref" : "ScaleInAlarmWhenSchedulableContainerCapacityHigh"
+						},
+						"MIN_THRESHOLD" : {
+							"Ref" : "LowThreshold"
+						},
+						"ASG_NAME" : {
+							"Ref" : "ECSClusterASG"
+						},
+						"SNS_TOPIC" : {
+							"Ref" : "SNSTopic"
+						},
+						"MAX_CPU" : {
+							"Ref" : "MaxContainerCPUUnits"
+						},
+						"MAX_MEMORY" : {
+							"Ref" : "MaxContainerMemory"
+						},
+						"ECS_CLUSTER" : {
+							"Ref" : "ECSCluster"
+						}
+					}
+				},
+				"Role": {
+					"Fn::GetAtt" : [ "HighThresholdCalculatorExecutionRole", "Arn" ]
+				},
+				"Events" : {
+					"HourlySchedule" : {
+						"Type" : "Schedule",
+						"Properties" : {
+							"Schedule" : "rate(1 hour)"
+						}
+					}
+				}
+			},
+			"DependsOn" : [
+				"XRayWriteOnlyPolicy",
+				"HighThresholdCalculatorSQSPolicy"
+			]
+		},
+
+		"TaskStateChangeEventRule" : {
+			"Type" : "AWS::Events::Rule",
+			"Properties" : {
+				"Description" : {
+					"Fn::Sub" : "Task state change in cluster ${ECSCluster}."
+				},
+				"State" : "ENABLED",
+				"Targets" : [
+					{
+						"Arn" : { 
+							"Fn::GetAtt" : [ "AutoScalingLifecycleHookCompleter", "Arn" ]	
+						},
+						"Id" : "LambdaLifecycleTaskCompleter"
+					}
+				],
+				"EventPattern" : {
+					"source": [
+						"aws.ecs"
+					],
+					"detail-type": [
+						"ECS Task State Change"
+					],
+					"detail" : {
+						"clusterArn" : [
+							{
+								"Fn::GetAtt" : [ "ECSCluster", "Arn" ]
+							}
+						],
+						"desiredStatus" : [
+							"STOPPED"
+						]
+					}
+				}
+			}
+		},
+		"ASGInstanceTerminateEventRule" : {
+			"Type" : "AWS::Events::Rule",
+			"Properties" : {
+				"Description" : {
+					"Fn::Sub" : "An instance in cluster ${ECSCluster} is being terminated by Auto-Scaling. Triggers draining of all containers on the instance."
+				},
+				"State" : "ENABLED",
+				"Targets" : [
+					{
+						"Arn" : { 
+							"Fn::GetAtt" : [ "ECSTaskDrainer", "Arn" ]	
+						},
+						"Id" : "ECSTaskDrainer"
+					}
+				],
+				"EventPattern" : {
+					"source": [
+						"aws.autoscaling"
+					],
+					"detail-type": [
+						"EC2 Instance-terminate Lifecycle Action"
+					],
+					"detail" : {
+						"AutoScalingGroupName": [
+							{
+								"Ref" : "ECSClusterASG"
+							}
+						]			
+					}
+				}
+			}
+		},
+		"ASGInstanceLaunchFailureEventRule" : {
+			"Type" : "AWS::Events::Rule",
+			"Properties" : {
+				"Description" : {
+					"Fn::Sub" : "An instance in cluster ${ECSCluster} failed to launch."
+				},
+				"State" : "ENABLED",
+				"Targets" : [
+					{
+						"Arn" : { 
+							"Ref" : "SNSTopic"
+						},
+						"Id" : "InstanceLaunchFailure"
+					}
+				],
+				"EventPattern" : {
+					"source": [
+						"aws.autoscaling"
+					],
+					"detail-type": [
+						"EC2 Instance Launch Unsuccessful"
+					],
+					"detail" : {
+						"AutoScalingGroupName": [
+							{
+								"Ref" : "ECSClusterASG"
+							}
+						]			
+					}
+				}
+			}
+		},
+
+		"ScaleOutAlarmWhenSchedulableContainerCapacityLow" : {
+			"Type" : "AWS::CloudWatch::Alarm",
+			"Properties" : {
+				"EvaluationPeriods" : 1,
+				"Statistic" : "Minimum",
+				"Threshold" : {
+					"Ref" : "LowThreshold"
+				},
+				"ComparisonOperator" : "LessThanOrEqualToThreshold",
+				"AlarmDescription" : {
+					"Fn::Sub" : "Alarm if 1 time during a 60 second window less than ${LowThreshold} containers with maximum size can be scheduled."
+				},
+				"Period" : "60",
+				"Dimensions" : [
+					{
+						"Name" : "ClusterName",
+						"Value" : {
+							"Ref" : "ECSCluster"
+						}
+					}
+				],
+				"Namespace" : "AWS/ECS",
+				"MetricName" : "SchedulableContainers",
+				"AlarmActions" : [
+					{
+						"Ref" : "ScaleOutAction"
+					}
+				],
+				"TreatMissingData" : "notBreaching"
+			}
+		},
+		"ScaleInAlarmWhenSchedulableContainerCapacityHigh" : {
+			"Type" : "AWS::CloudWatch::Alarm",
+			"Properties" : {
+				"EvaluationPeriods" : 1,
+				"Statistic" : "Minimum",
+				"Threshold" : {
+					"Ref" : "LowThreshold"
+				},
+				"ComparisonOperator" : "GreaterThanThreshold",
+				"AlarmDescription" : {
+					"Fn::Sub" : "Alarm if 1 time during a 60 second window if a node can be removed and still maintain the minimum capacity to schedule ${LowThreshold} containers with maximum size can be scheduled."
+				},
+				"Period" : "60",
+				"Dimensions" : [
+					{
+						"Name" : "ClusterName",
+						"Value" : {
+							"Ref" : "ECSCluster"
+						}
+					}
+				],
+				"Namespace" : "AWS/ECS",
+				"MetricName" : "SchedulableContainers",
+				"AlarmActions" : [
+					{
+						"Ref" : "ScaleInAction"
+					}
+				],
+				"TreatMissingData" : "ignore"
+			}
+		}
+	},
+
+	"Outputs" : {
+	}
+}

@@ -1,0 +1,18 @@
+
+{
+    "Information" : [
+        "This file provides default values for the deployment wizard inside Visual Studio and the AWS Lambda commands added to the .NET Core CLI.",
+        "To learn more about the Lambda commands with the .NET Core CLI execute the following command at the command line in the project root directory.",
+        "dotnet lambda help",
+        "All the command line options for the Lambda command can be specified in this file."
+    ],
+    "profile"     : "mhaken-dev",
+    "region"      : "us-east-1",
+    "configuration" : "Release",
+    "framework"     : "netcoreapp2.1",
+    "s3-prefix"     : "AutoScalingECSCluster/",
+    "template"      : "AutoScalingECSCluster.template",
+    "template-parameters" : "\"VpcId\"=\"vpc-0299a579\";\"InstanceType\"=\"m5a.large\";\"ImageId\"=\"/aws/service/ecs/optimized-ami/amazon-linux-2/recommended\";\"KeyName\"=\"mhaken-dev-us-east-1\";\"UseSpot\"=\"false\";\"KmsKeyId\"=\"\";\"UseExistingCapacityReservation\"=\"true\";\"ASGMinSize\"=\"1\";\"ASGMaxSize\"=\"3\";\"Subnets\"=\"subnet-94f13ef3,subnet-3f458311,subnet-9cd952d6\";\"Cooldown\"=\"300\";\"HealthCheckGracePeriod\"=\"180\";\"HighThreshold\"=\"3\";\"LowThreshold\"=\"1\";\"MaxContainerCPUUnits\"=\"1024\";\"MaxContainerMemory\"=\"2048\";\"NotificationEmail\"=\"mhaken@amazon.com\";\"LogRetentionInDays\"=\"7\"",
+    "s3-bucket"           : "mhaken-lambda",
+    "stack-name"          : "AutoScalingECSCluster"
+}

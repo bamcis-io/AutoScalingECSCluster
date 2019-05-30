@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netcoreapp2.1</TargetFramework>
+    <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
+    <AWSProjectType>Lambda</AWSProjectType>
+    <RootNamespace>BAMCIS.LambdaFunctions.AutoScalingECSCluster</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Amazon.Lambda.CloudWatchEvents" Version="1.0.0" />
+    <PackageReference Include="Amazon.Lambda.Core" Version="1.1.0" />
+    <PackageReference Include="Amazon.Lambda.Serialization.Json" Version="1.5.0" />
+    <PackageReference Include="AWSSDK.AutoScaling" Version="3.3.100.16" />
+    <PackageReference Include="AWSSDK.CloudWatch" Version="3.3.101.13" />
+    <PackageReference Include="AWSSDK.ECS" Version="3.3.102.3" />
+    <PackageReference Include="AWSSDK.SimpleNotificationService" Version="3.3.101.5" />
+    <PackageReference Include="AWSXRayRecorder" Version="2.6.1" />
+    <PackageReference Include="BAMCIS.AWSLambda.Common" Version="2.0.1" />
+    <PackageReference Include="ChunkExtensionMethod" Version="1.0.2" />
+  </ItemGroup>
+</Project>

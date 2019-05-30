@@ -1,0 +1,37 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.28803.352
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AutoScalingECSCluster", "AutoScalingECSCluster\AutoScalingECSCluster.csproj", "{23FF35B0-D23A-4329-9085-C124BEEF549D}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AutoScalingECSCluster.Tests", "AutoScalingECSCluster.Tests\AutoScalingECSCluster.Tests.csproj", "{6D2BCEB8-3FD1-43D4-A723-C632F603B53A}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{FE73561A-084D-40EB-AAF6-D2A437C326A7}"
+	ProjectSection(SolutionItems) = preProject
+		LICENSE = LICENSE
+		README.md = README.md
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{23FF35B0-D23A-4329-9085-C124BEEF549D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{23FF35B0-D23A-4329-9085-C124BEEF549D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{23FF35B0-D23A-4329-9085-C124BEEF549D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{23FF35B0-D23A-4329-9085-C124BEEF549D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6D2BCEB8-3FD1-43D4-A723-C632F603B53A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6D2BCEB8-3FD1-43D4-A723-C632F603B53A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6D2BCEB8-3FD1-43D4-A723-C632F603B53A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6D2BCEB8-3FD1-43D4-A723-C632F603B53A}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {3782CCE0-220F-4B8F-B8B0-CA2565912667}
+	EndGlobalSection
+EndGlobal
