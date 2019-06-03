@@ -372,28 +372,27 @@ namespace BAMCIS.LambdaFunctions.AutoScalingECSCluster
             }
 
             PutMetricDataResponse metricResponse;
+            List<MetricDatum> metrics = new List<MetricDatum>()
+            {
+                new MetricDatum()
+                {
+                    Unit =  StandardUnit.Count,
+                    MetricName = "SchedulableContainers",
+                    Value = totalSchedulable,
+                    StorageResolution = 60,
+                    Dimensions = new List<Dimension>()
+                    {
+                        new Dimension()
+                        {
+                            Name = "ClusterName",
+                            Value = ecsCluster
+                        }
+                    }
+                }
+            };
 
             try
             {
-                List<MetricDatum> metrics = new List<MetricDatum>()
-                {
-                    new MetricDatum()
-                    {
-                        Unit =  StandardUnit.Count,
-                        MetricName = "SchedulableContainers",
-                        Value = totalSchedulable,
-                        StorageResolution = 60,
-                        Dimensions = new List<Dimension>()
-                        {
-                            new Dimension()
-                            {
-                                Name = "ClusterName",
-                                Value = ecsCluster
-                            }
-                        }
-                    }
-                };
-
                 metrics.AddRange(schedulableContainersByInstance.SelectMany(x =>
                 {
                     return new List<MetricDatum>(){
@@ -439,7 +438,17 @@ namespace BAMCIS.LambdaFunctions.AutoScalingECSCluster
                         }
                     };
                 }));
+            }
+            catch (Exception e)
+            {
+                string message = "Failure during creation of metrics before being sent to CloudWatch.";
+                context.LogError(message, e);
+                await SNSNotify(e, message, context);
+                throw e;
+            }
 
+            try
+            {
                 PutMetricDataRequest metric = new PutMetricDataRequest()
                 {
                     Namespace = "AWS/ECS",
@@ -450,8 +459,9 @@ namespace BAMCIS.LambdaFunctions.AutoScalingECSCluster
             }
             catch (Exception e)
             {
-                context.LogError(e);
-                await SNSNotify($"{e.GetType().FullName} : {e.Message}", context);
+                string message = "Failure putting metric data to CloudWatch.";
+                context.LogError(message, e);
+                await SNSNotify(e, message, context);
                 throw e;
             }
 
@@ -619,7 +629,7 @@ namespace BAMCIS.LambdaFunctions.AutoScalingECSCluster
 
             PutMetricAlarmRequest alarmRequest = CopyProperties<PutMetricAlarmRequest>(alarm, "DatapointsToAlarm");
             alarmRequest.Threshold = totalSchedulable;
-            
+
             PutMetricAlarmResponse alarmResponse;
 
             try
@@ -855,6 +865,29 @@ namespace BAMCIS.LambdaFunctions.AutoScalingECSCluster
                     context.LogError("Failed to send SNS notification.", e);
                 }
             }
+        }
+
+        /// <summary>
+        /// If configured, sends an SNS notification to a topic
+        /// </summary>
+        /// <param name="e"></param>
+        /// <param name="context"></param>
+        /// <returns></returns>
+        private static async System.Threading.Tasks.Task SNSNotify(Exception e, ILambdaContext context)
+        {
+            await SNSNotify($"EXCEPTION: {e.GetType().FullName}\nMESSAGE: {e.Message}\nSTACKTRACE: {e.StackTrace}", context);
+        }
+
+        /// <summary>
+        /// If configured, sends an SNS notification to a topic
+        /// </summary>
+        /// <param name="e"></param>
+        /// <param name="message"></param>
+        /// <param name="context"></param>
+        /// <returns></returns>
+        private static async System.Threading.Tasks.Task SNSNotify(Exception e, string message, ILambdaContext context)
+        {
+            await SNSNotify($"{message}\nEXCEPTION: {e.GetType().FullName}\nMESSAGE: {e.Message}\nSTACKTRACE: {e.StackTrace}", context);
         }
 
         /// <summary>
